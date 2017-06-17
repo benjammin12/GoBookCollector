@@ -28,11 +28,12 @@ const (
 	host     = "localhost"
 	port     = 5432
 	user     = "benjaminxerri"
-	dbname   = "books"
 	password = "root"
+	dbname   = "books"
 )
 
 var Db *sql.DB
+var templates *template.Template
 
 func init() {
 	var err error
@@ -44,55 +45,17 @@ func init() {
 		panic(err)
 	}
 
+	templates = template.Must(template.ParseFiles("templates/index.html"))
+
 }
 
 func main() {
-	templates := template.Must(template.ParseFiles("templates/index.html"))
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		p := Page{Name: "Gopher"}
-		if name := r.FormValue("name"); name != "" {
-			p.Name = name
-		}
-		p.DBStatus = Db.Ping() == nil
+	http.HandleFunc("/", index)
 
-		if err := templates.ExecuteTemplate(w, "index.html", p); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	})
+	http.HandleFunc("/search", displayBooks)
 
-	http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
-		var results []SearchResult
-		var err error
-
-		if results, err = search(r.FormValue("search")); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-
-		encoder := json.NewEncoder(w)
-		if err := encoder.Encode(results); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	})
-
-	http.HandleFunc("/books/add", func (w http.ResponseWriter, r *http.Request) {
-		var book ClassifyBookResponse
-		var err error
-
-		if book, err = find(r.FormValue("id")); err !=   nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		if err = Db.Ping(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-
-		_, err = Db.Exec("insert into books (title, author, book_id, classification) values ($1,$2,$3,$4)",
-			book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
-
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	})
+	http.HandleFunc("/books/add", addBook)
 
 	fmt.Println(http.ListenAndServe(":8080", nil))
 }
@@ -124,6 +87,37 @@ func find(id string) (ClassifyBookResponse, error) {
 	return c, err
 }
 
+func index(w http.ResponseWriter, r *http.Request) {
+	p := Page{Name: "Gopher"}
+	if name := r.FormValue("name"); name != "" {
+		p.Name = name
+	}
+	p.DBStatus = Db.Ping() == nil
+
+	if err := templates.ExecuteTemplate(w, "index.html", p); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func addBook (w http.ResponseWriter, r *http.Request) {
+	var book ClassifyBookResponse
+	var err error
+
+	if book, err = find(r.FormValue("id")); err !=   nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	if err = Db.Ping(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	_, err = Db.Exec("insert into book (title, author, book_id, classification) values ($1,$2,$3,$4)",
+		book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func search(query string) ([]SearchResult, error) {
 	var c ClassifySearchResponse
 	body, err := classifyAPI("http://classify.oclc.org/classify2/Classify?summary=true&title=" + url.QueryEscape(query))
@@ -134,6 +128,20 @@ func search(query string) ([]SearchResult, error) {
 
 	err = xml.Unmarshal(body, &c)
 	return c.Results, err
+}
+
+func displayBooks(w http.ResponseWriter, r *http.Request) {
+	var results []SearchResult
+	var err error
+
+	if results, err = search(r.FormValue("search")); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(results); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func classifyAPI(url string) ([]byte, error) {
