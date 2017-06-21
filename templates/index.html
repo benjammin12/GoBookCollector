@@ -11,77 +11,126 @@
             background-color: lightgrey;
             cursor: pointer;
         }
+
+        #showSearch{
+          display: none;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Welcome to book collectors {{.Name}} Page!</h1>
 
 
-    {{if .DBStatus}}
-        <p>Connection</p>
-    {{else}}
-        <p>No Connection</p>
-    {{end}}
+<script type="text/javascript"
+        src="https://code.jquery.com/jquery-2.2.4.js"
+        integrity="sha256-iT6Q9iMJYuQiMWNd9lDyBUStIq/8PuOW33aOqmvFpqI="
+        crossorigin="anonymous"></script>
+
+<script type="text/javascript">
 
 
-        <form id="search-form" onsubmit="return false"> <!--So browser does not submit form-->
-            <input name="search" />
-            <input type="submit" value="Search" onclick="submitSearch()"/>
-        </form>
-
-        <table width="100%">
-            <thead>
-                <tr style="text-align: left;">
-                    <th width="40%">Title</th>
-                    <th width="30%">Author</th>
-                    <th width="10%">Year</th>
-                    <th width="20%">ID</th>
-                </tr>
-            </thead>
-            <tbody id="search-results">
-
-            </tbody>
-        </table>
-    </div>
-
-    <script type="text/javascript"
-            src="https://code.jquery.com/jquery-2.2.4.js"
-            integrity="sha256-iT6Q9iMJYuQiMWNd9lDyBUStIq/8PuOW33aOqmvFpqI="
-            crossorigin="anonymous"></script>
-
-    <script type="text/javascript">
-        function submitSearch() {
-            $.ajax({
-                url:"/search",
-                method: "POST",
-                data: $("#search-form").serialize(),
-                success: function(rawData) {
-                    var parsed = JSON.parse(rawData);
-                    if(!parsed) return; //invalid data was given
-
-                    var searchResults = $("#search-results");
-                    searchResults.empty(); //remove previous search results
-                    console.log("Here in funciton");
-                    parsed.forEach(function(result) {
-                        var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year +
-                            "</td><td>" + result.ID + "</td></tr>");
-                        //var row = "Hello inside the function";
-                        console.log("appending data now");
-                        searchResults.append(row);
-                        row.on("click", function() {
-                            $.ajax({
-                                url: "/books/add?id=" + result.ID,
-                                method: "GET"
-                            })
+    function submitSearch() {
+        $.ajax({
+            url:"/search",
+            method:"POST",
+            data: $("#search-form").serialize(),
+            success: function(rawData) {
+                var parsed = JSON.parse(rawData);
+                //if (!parsed) return; //invalid data was given
+                var searchResults = $("#search-results");
+                searchResults.empty(); //remove previous search results
+                parsed.forEach(function(result) {
+                    var row = $("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year +
+                        "</td><td>" + result.ID + "</td></tr>");
+                    //var row = "Hello inside the function";
+                    console.log("appending data now");
+                    searchResults.append(row);
+                    row.on("click", function() {
+                        $.ajax({
+                            url:"/books/add?id=" + result.ID,
+                            method:"GET",
+                            success: function(data) {
+                                var book = JSON.parse(data);
+                                //   if (!book) return;
+                                $("#view-results").append("<tr><td>" + result.Title + "</td><td>" + result.Author + "</td><td>" + result.Year +
+                                    "</td><td>" + result.ID + "</td></tr>");
+                            }
                         })
-                    });
-                }
-            });
+                    })
+                });
+            }
+        });
 
-            return false; //prevents default button action from being taken
+        return false; //prevents default button action from being taken
+    }
+
+</script>
+
+    <script>
+        function showSearchPage() {
+            $("#showSearch").show()
+            $("#showView").hide()
+        }
+
+        function showViewPage() {
+            $("#showView").show()
+            $("#showSearch").hide()
         }
     </script>
+
+    <div class="container">
+
+        <div id="switch-page">
+            <button onclick="showViewPage()">View Library</button>
+            <button onclick="showSearchPage()">Add Books</button>
+        </div>
+
+        <div id="showSearch">
+
+            <form id="search-form" onsubmit="return false"> <!--So browser does not submit form-->
+                <input name="search" />
+                <input type="submit" value="Search" onclick="submitSearch()"/>
+            </form>
+
+            <table width="100%">
+                <thead>
+                    <tr style="text-align: left;">
+                        <th width="40%">Title</th>
+                        <th width="30%">Author</th>
+                        <th width="10%">Year</th>
+                        <th width="20%">ID</th>
+                    </tr>
+                </thead>
+                <tbody id="search-results">
+
+                </tbody>
+            </table>
+        </div>
+
+        <div id="showView">
+            <table width="100%">
+                <thead>
+                    <tr style="text-align: left;">
+                        <th width="45%">Title</th>
+                        <th width="35%">Author</th>
+                        <th width="20%">Classification</th>
+                    </tr>
+                </thead>
+                <tbody id="view-results">
+                    {{range .Books}}
+                        <tr>
+                            <td>{{.Title}}</td>
+                            <td>{{.Author}}</td>
+                            <td>{{.Classification}}</td>
+                        </tr>
+                    {{end}}
+                </tbody>
+
+
+            </table>
+
+        </div>
+    </div>
+
 
 </body>
 </html>

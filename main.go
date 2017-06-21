@@ -10,11 +10,18 @@ import (
 	"net/url"
 	"io/ioutil"
 	"encoding/xml"
+	"github.com/urfave/negroni"
 )
 
 type Page struct {
-	Name string
-	DBStatus bool
+	Books []Book
+}
+
+type Book struct {
+	Id int
+	Title string
+	Author string
+	Classification string
 }
 
 type SearchResult struct {
@@ -50,14 +57,21 @@ func init() {
 }
 
 func main() {
+	mux := http.NewServeMux()
 
-	http.HandleFunc("/", index)
+	mux.HandleFunc("/", index)
 
-	http.HandleFunc("/search", displayBooks)
+	mux.HandleFunc("/search", displayBooks)
 
-	http.HandleFunc("/books/add", addBook)
+	mux.HandleFunc("/books/add", addBook)
 
-	fmt.Println(http.ListenAndServe(":8080", nil))
+	n := negroni.Classic() //use negroni as a web middleware to handle actions before your route is called, negroni logs all response and requests
+				//to the console
+
+	n.Use(negroni.HandlerFunc(verifyConnection))
+	n.UseHandler(mux)
+
+	n.Run(":8080")
 }
 
 type ClassifySearchResponse struct {
@@ -88,11 +102,16 @@ func find(id string) (ClassifyBookResponse, error) {
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
-	p := Page{Name: "Gopher"}
-	if name := r.FormValue("name"); name != "" {
-		p.Name = name
+	p := Page{Books: []Book{}}
+
+	rows, _ := Db.Query("SELECT id, title, author, classification from books")
+
+	for rows.Next() {
+		var b Book
+		rows.Scan(&b.Id, &b.Title, &b.Author, &b.Classification)
+		p.Books = append(p.Books, b)
 	}
-	p.DBStatus = Db.Ping() == nil
+
 
 	if err := templates.ExecuteTemplate(w, "index.html", p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -106,15 +125,25 @@ func addBook (w http.ResponseWriter, r *http.Request) {
 	if book, err = find(r.FormValue("id")); err !=   nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	if err = Db.Ping(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 
-	_, err = Db.Exec("insert into book (title, author, book_id, classification) values ($1,$2,$3,$4)",
+	result , err := Db.Exec("insert into books (title, author, book_id, classification) values ($1,$2,$3,$4)",
 		book.BookData.Title, book.BookData.Author, book.BookData.ID, book.Classification.MostPopular)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	pk, _ := result.LastInsertId()
+
+	b := Book{
+		Id:int(pk),
+		Title:book.BookData.Title,
+		Author:string(book.BookData.Author),
+		Classification:book.Classification.MostPopular,
+	}
+
+	if errJson := json.NewEncoder(w).Encode(b); errJson != nil {
+		http.Error(w, errJson.Error(),http.StatusInternalServerError)
 	}
 }
 
@@ -155,4 +184,13 @@ func classifyAPI(url string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	return ioutil.ReadAll(resp.Body)
+}
+
+func verifyConnection(w http.ResponseWriter, r *http.Request, next http.HandlerFunc){
+	err := Db.Ping()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	next(w, r)
 }
